@@ -1,0 +1,34 @@
+{
+  "name": "hextape",
+  "version": "0.0.0",
+  "description": "Converts to/from various ASCII hex record formats used in EPROM programming, paper tapes etc",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "jsdoc": "./node_modules/.bin/jsdoc -d ./jsdoc . package.json README.md"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/davidknoll/hextape.git"
+  },
+  "keywords": [
+    "hex",
+    "binary",
+    "srecord",
+    "intel",
+    "motorola",
+    "signetics"
+  ],
+  "author": "David Knoll <david@davidknoll.me.uk>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/davidknoll/hextape/issues"
+  },
+  "homepage": "https://github.com/davidknoll/hextape#readme",
+  "dependencies": {
+    "printf": "^0.6.0"
+  },
+  "devDependencies": {
+    "jsdoc": "^3.6.6"
+  }
+}
