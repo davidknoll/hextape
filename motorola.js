@@ -6,7 +6,6 @@
 'use strict';
 const printf = require('printf');
 const { Transform } = require('stream');
-const FIFOBuffer = require('fifo-buffer');
 
 /**
  * Generate one Motorola S-record
@@ -111,57 +110,105 @@ const parseRecord = (record) => {
 };
 
 class HexStream extends Transform {
-  _fifo;
+  // Private instance variables
+  _tmpbuf;
   _cnt;
   _ptr;
   _exec;
   _reclen;
 
+  // Find appropriate data/count/exec record type for address width
   _dtype(addr) { return (addr > 0xFFFFFF) ? 3 : (addr > 0xFFFF) ? 2 : 1; }
   _ctype(addr) { return (addr > 0xFFFF) ? 6 : 5; }
   _atype(addr) { return (addr > 0xFFFFFF) ? 7 : (addr > 0xFFFF) ? 8 : 9; }
 
-  _pushrecs() {
-    let recbuf;
-    while (recbuf = this._fifo.deq(this._reclen)) {
-      this.push(buildRecord(this._dtype(this._ptr), this._ptr, recbuf) + '\n');
-      this._cnt++;
-      this._ptr += recbuf.length;
-    }
-  }
-
+  /**
+   * Construct a new transform stream turning binary data into Motorola S-records.
+   * Record types and checksums are determined automatically.
+   * @param {?string} header An identifying string to embed in the output file
+   * @param {?number} base   Load address, 0x0 - 0xFFFFFFFF
+   * @param {?number} exec   Execution address, 0x0 - 0xFFFFFFFF
+   * @param {?number} reclen Maximum data bytes in one record, 0 - 250
+   * @throws If header too long or addresses bad
+   */
   constructor(header = null, base = 0, exec = 0, reclen = 0x20) {
+    if (!Number.isInteger(base) || base < 0 || base > 0xFFFFFFFF) {
+      throw new Error('Bad base address');
+    }
+    if (!Number.isInteger(exec) || exec < 0 || exec > 0xFFFFFFFF) {
+      throw new Error('Bad exec address');
+    }
+    if (!Number.isInteger(reclen) || reclen < 1 || reclen + 5 > 0xFF) {
+      reclen = 0x20;
+    }
+
     super();
-    this._fifo = new FIFOBuffer();
+    this._tmpbuf = Buffer.alloc(0);
     this._cnt = 0;
     this._ptr = base;
     this._exec = exec;
     this._reclen = reclen;
 
+    // Emit a header record if we have one
     if (header) {
-      this.push(buildRecord(0, 0, Buffer.from(header, 'ascii')) + '\n');
+      const hdrbuf = Buffer.from(header, 'ascii');
+      if (hdrbuf.length > reclen) { throw new Error('Header too long'); }
+      if (hdrbuf.length) { this.push(buildRecord(0, 0, hdrbuf) + '\n'); }
     }
   }
 
+  // Transform stream implementation, receive a binary chunk
   _transform(chunk, encoding, callback) {
-    if (this._fifo.enq(chunk)) {
-      this._pushrecs();
-      callback();
-    } else {
-      callback(new Error('Chunk too large for buffer'));
+    // Still not enough bytes to emit a record after this chunk, just save it
+    if (this._tmpbuf.length + chunk.length < this._reclen) {
+      this._tmpbuf = Buffer.concat([this._tmpbuf, chunk]);
+      return callback();
     }
+
+    // Emit one data record, part of which may have been left over from the last chunk
+    let chunkptr = this._reclen - this._tmpbuf.length;
+    if (this._ptr > 0xFFFFFFFF) {
+      return callback(new Error('Load address too wide'));
+    }
+    this.push(buildRecord(
+      this._dtype(this._ptr), this._ptr,
+      Buffer.concat([this._tmpbuf, chunk.slice(0, chunkptr)])
+    ) + '\n');
+    this._cnt++;
+    this._ptr += this._reclen;
+
+    // Emit as many more full-length data records as possible from this chunk
+    while (chunkptr + this._reclen <= chunk.length) {
+      if (this._ptr > 0xFFFFFFFF) {
+        return callback(new Error('Load address too wide'));
+      }
+      this.push(buildRecord(
+        this._dtype(this._ptr), this._ptr,
+        chunk.slice(chunkptr, chunkptr + this._reclen)
+      ) + '\n');
+      this._cnt++;
+      this._ptr += this._reclen;
+      chunkptr += this._reclen;
+    }
+
+    // And save the remainder
+    this._tmpbuf = chunk.slice(chunkptr);
+    callback();
   }
 
+  // Transform stream implementation, flush remaining data and send EOF records
   _flush(callback) {
-    this._pushrecs();
-    if (this._fifo.size) {
-      const recbuf = this._fifo.deq(this._fifo.size);
-      this.push(buildRecord(this._dtype(this._ptr), this._ptr, recbuf) + '\n');
+    // If remaining data, emit one more short record
+    if (this._tmpbuf.length) {
+      if (this._ptr > 0xFFFFFFFF) {
+        return callback(new Error('Load address too wide'));
+      }
+      this.push(buildRecord(this._dtype(this._ptr), this._ptr, this._tmpbuf) + '\n');
       this._cnt++;
-      this._ptr += recbuf.length;
     }
 
-    if (this._cnt) {
+    // Data record count, exec address
+    if (this._cnt > 0 && this._cnt <= 0xFFFFFF) {
       this.push(buildRecord(this._ctype(this._cnt), this._cnt) + '\n');
     }
     this.push(buildRecord(this._atype(this._exec), this._exec) + '\n');

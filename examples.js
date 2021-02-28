@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const fs = require('fs');
 const hextape = require('.');
 
 // Generate Signetics
@@ -32,3 +33,8 @@ console.log(hextape.motorola.buildRecord(1, 0x0038, buf5));
 // Parse Motorola
 const rec6 = 'S111003848656C6C6F20776F726C642E0A0042';
 console.log(hextape.motorola.parseRecord(rec6));
+
+// Stream Motorola
+fs.createReadStream('LICENSE')
+  .pipe(new hextape.motorola.HexStream('LICENSE'))
+  .pipe(process.stdout);
