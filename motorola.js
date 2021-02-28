@@ -5,6 +5,7 @@
  */
 'use strict';
 const printf = require('printf');
+const { Transform } = require('stream');
 
 /**
  * Generate one Motorola S-record
@@ -108,4 +109,60 @@ const parseRecord = (record) => {
   return { type, addr, buf };
 };
 
-module.exports = { buildRecord, parseRecord };
+class HexStream extends Transform {
+  _buf;
+  _cnt;
+  _ptr;
+  _exec;
+  _reclen;
+
+  _dtype(addr) { return (addr > 0xFFFFFF) ? 3 : (addr > 0xFFFF) ? 2 : 1; }
+  _ctype(addr) { return (addr > 0xFFFF) ? 6 : 5; }
+  _atype(addr) { return (addr > 0xFFFFFF) ? 7 : (addr > 0xFFFF) ? 8 : 9; }
+
+  _pushrecs() {
+    while (this._buf.length - this._ptr >= this._reclen) {
+      const recbuf = this._buf.slice(this._ptr, this._ptr + this._reclen);
+      this.push(buildRecord(this._dtype(this._ptr), this._ptr, recbuf) + '\n');
+      this._cnt++;
+      this._ptr += this._reclen;
+    }
+  }
+
+  constructor(header = null, base = 0, exec = 0, reclen = 0x20) {
+    super();
+    this._buf = Buffer.alloc(0);
+    this._cnt = 0;
+    this._ptr = base;
+    this._exec = exec;
+    this._reclen = reclen;
+
+    if (header) {
+      this.push(buildRecord(0, 0, Buffer.from(header, 'ascii')) + '\n');
+    }
+  }
+
+  _transform(chunk, encoding, callback) {
+    this._buf = Buffer.concat([ this._buf, chunk ]);
+    this._pushrecs();
+    callback();
+  }
+
+  _flush(callback) {
+    this._pushrecs();
+    if (this._buf.length - this._ptr) {
+      const recbuf = this._buf.slice(this._ptr);
+      this.push(buildRecord(this._dtype(this._ptr), this._ptr, recbuf) + '\n');
+      this._cnt++;
+      this._ptr += recbuf.length;
+    }
+
+    if (this._cnt) {
+      this.push(buildRecord(this._ctype(this._cnt), this._cnt) + '\n');
+    }
+    this.push(buildRecord(this._atype(this._exec), this._exec) + '\n');
+    callback();
+  }
+}
+
+module.exports = { buildRecord, parseRecord, HexStream };
