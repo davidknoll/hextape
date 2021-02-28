@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/davidknoll/hextape#readme",
   "dependencies": {
+    "fifo-buffer": "^1.0.0",
     "printf": "^0.6.0"
   },
   "devDependencies": {

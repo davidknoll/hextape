@@ -6,6 +6,7 @@
 'use strict';
 const printf = require('printf');
 const { Transform } = require('stream');
+const FIFOBuffer = require('fifo-buffer');
 
 /**
  * Generate one Motorola S-record
@@ -110,7 +111,7 @@ const parseRecord = (record) => {
 };
 
 class HexStream extends Transform {
-  _buf;
+  _fifo;
   _cnt;
   _ptr;
   _exec;
@@ -121,17 +122,17 @@ class HexStream extends Transform {
   _atype(addr) { return (addr > 0xFFFFFF) ? 7 : (addr > 0xFFFF) ? 8 : 9; }
 
   _pushrecs() {
-    while (this._buf.length - this._ptr >= this._reclen) {
-      const recbuf = this._buf.slice(this._ptr, this._ptr + this._reclen);
+    let recbuf;
+    while (recbuf = this._fifo.deq(this._reclen)) {
       this.push(buildRecord(this._dtype(this._ptr), this._ptr, recbuf) + '\n');
       this._cnt++;
-      this._ptr += this._reclen;
+      this._ptr += recbuf.length;
     }
   }
 
   constructor(header = null, base = 0, exec = 0, reclen = 0x20) {
     super();
-    this._buf = Buffer.alloc(0);
+    this._fifo = new FIFOBuffer();
     this._cnt = 0;
     this._ptr = base;
     this._exec = exec;
@@ -143,15 +144,18 @@ class HexStream extends Transform {
   }
 
   _transform(chunk, encoding, callback) {
-    this._buf = Buffer.concat([ this._buf, chunk ]);
-    this._pushrecs();
-    callback();
+    if (this._fifo.enq(chunk)) {
+      this._pushrecs();
+      callback();
+    } else {
+      callback(new Error('Chunk too large for buffer'));
+    }
   }
 
   _flush(callback) {
     this._pushrecs();
-    if (this._buf.length - this._ptr) {
-      const recbuf = this._buf.slice(this._ptr);
+    if (this._fifo.size) {
+      const recbuf = this._fifo.deq(this._fifo.size);
       this.push(buildRecord(this._dtype(this._ptr), this._ptr, recbuf) + '\n');
       this._cnt++;
       this._ptr += recbuf.length;
