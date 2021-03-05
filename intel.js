@@ -73,7 +73,7 @@ class HexStream extends Transform {
   /**
    * Construct a new transform stream turning binary data into Intel hex records.
    * Record types and checksums are determined automatically.
-   * @param {?null}    header Not used in Intel hex
+   * @param {?null}   header Not used in Intel hex
    * @param {?number} base   Load address, 0x0 - 0xFFFFFFFF
    * @param {?number} exec   Execution address, 0x0 - 0xFFFFFFFF
    * @param {?number} reclen Maximum data bytes in one record, 1 - 255

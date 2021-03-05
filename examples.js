@@ -44,6 +44,6 @@ fs.createReadStream('LICENSE')
 fs.createReadStream('LICENSE')
   .pipe(new hextape.motorola.HexStream())
   .pipe(fs.createWriteStream('LICENSE.ht.s19'));
-// fs.createReadStream('LICENSE')
-//   .pipe(new hextape.signetics.HexStream())
-//   .pipe(fs.createWriteStream('LICENSE.ht.shx'));
+fs.createReadStream('LICENSE')
+  .pipe(new hextape.signetics.HexStream())
+  .pipe(fs.createWriteStream('LICENSE.ht.shx'));

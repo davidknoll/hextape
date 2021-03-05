@@ -5,6 +5,7 @@
  */
 'use strict';
 const printf = require('printf');
+const { Transform } = require('stream');
 
 // Update the block control character
 const bcc = (sum, data) => {
@@ -76,4 +77,79 @@ const parseRecord = (record) => {
   return { type: null, addr, buf };
 };
 
-module.exports = { buildRecord, parseRecord };
+function * concatgen(bufs) {
+  for (let i = 0; i < bufs.length; i++) {
+    for (const value of bufs[i]) { yield value; }
+  }
+}
+
+class HexStream extends Transform {
+  // Private instance variables
+  _tmpbuf;
+  _ptr;
+  _exec;
+  _reclen;
+
+  /**
+   * Construct a new transform stream turning binary data into Signetics hex records.
+   * Record types and checksums are determined automatically.
+   * @param {?null}   header Not used in Signetics hex
+   * @param {?number} base   Load address, 0x0 - 0xFFFF
+   * @param {?number} exec   Execution address, 0x0 - 0xFFFF
+   * @param {?number} reclen Maximum data bytes in one record, 1 - 255
+   * @throws If addresses bad
+   */
+  constructor(header = null, base = 0, exec = 0, reclen = 0x20) {
+    if (!Number.isInteger(base) || base < 0 || base > 0xFFFF) {
+      throw new Error('Bad base address');
+    }
+    if (!Number.isInteger(exec) || exec < 0 || exec > 0xFFFF) {
+      throw new Error('Bad exec address');
+    }
+    if (!Number.isInteger(reclen) || reclen < 1 || reclen > 0xFF) {
+      reclen = 0x20;
+    }
+
+    super();
+    this._tmpbuf = Buffer.alloc(0);
+    this._ptr = base;
+    this._exec = exec;
+    this._reclen = reclen;
+  }
+
+  // Transform stream implementation, receive a binary chunk
+  _transform(chunk, encoding, callback) {
+    const bg = concatgen([this._tmpbuf, chunk]);
+    let recbytes = [];
+    while (true) {
+      // Get next byte, or save any incomplete record
+      const b = bg.next();
+      if (b.done) {
+        this._tmpbuf = Buffer.from(recbytes);
+        return callback();
+      }
+      recbytes.push(b.value);
+
+      // Got enough bytes for a record
+      if (recbytes.length === this._reclen) {
+        this.push(buildRecord(null, this._ptr & 0xFFFF, Buffer.from(recbytes)) + '\n');
+        this._ptr += this._reclen;
+        recbytes = [];
+      }
+    }
+  }
+
+  // Transform stream implementation, flush remaining data and send EOF records
+  _flush(callback) {
+    // If remaining data, emit one more short record
+    if (this._tmpbuf.length) {
+      this.push(buildRecord(null, this._ptr & 0xFFFF, this._tmpbuf) + '\n');
+    }
+
+    // Exec address / EOF
+    this.push(buildRecord(null, this._exec ? this._exec : 0) + '\n');
+    callback();
+  }
+}
+
+module.exports = { buildRecord, parseRecord, HexStream };

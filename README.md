@@ -15,6 +15,7 @@ Converts to/from various ASCII hex record formats used in EPROM programming, pap
   * `signetics` - Signetics absolute object format
     * `buildRecord(type, addr, buf)`
     * `parseRecord(record)`
+    * `new HexStream(header, base, exec, reclen)`
 
 Usage
 -----
