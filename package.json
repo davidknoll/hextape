@@ -1,6 +1,6 @@
 {
   "name": "hextape",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Converts to/from various ASCII hex record formats used in EPROM programming, paper tapes etc",
   "main": "index.js",
   "scripts": {
