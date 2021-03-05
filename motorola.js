@@ -128,7 +128,7 @@ class HexStream extends Transform {
    * @param {?string} header An identifying string to embed in the output file
    * @param {?number} base   Load address, 0x0 - 0xFFFFFFFF
    * @param {?number} exec   Execution address, 0x0 - 0xFFFFFFFF
-   * @param {?number} reclen Maximum data bytes in one record, 0 - 250
+   * @param {?number} reclen Maximum data bytes in one record, 1 - 250
    * @throws If header too long or addresses bad
    */
   constructor(header = null, base = 0, exec = 0, reclen = 0x20) {

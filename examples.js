@@ -34,7 +34,16 @@ console.log(hextape.motorola.buildRecord(1, 0x0038, buf5));
 const rec6 = 'S111003848656C6C6F20776F726C642E0A0042';
 console.log(hextape.motorola.parseRecord(rec6));
 
-// Stream Motorola
+// Stream a file to each format, for testing/comparison
+// srec_cat LICENSE -binary -o LICENSE.sr.hex -intel
+// srec_cat LICENSE -binary -o LICENSE.sr.s19 -motorola
+// srec_cat LICENSE -binary -o LICENSE.sr.shx -signetics
 fs.createReadStream('LICENSE')
-  .pipe(new hextape.motorola.HexStream('LICENSE'))
-  .pipe(process.stdout);
+  .pipe(new hextape.intel.HexStream())
+  .pipe(fs.createWriteStream('LICENSE.ht.hex'));
+fs.createReadStream('LICENSE')
+  .pipe(new hextape.motorola.HexStream())
+  .pipe(fs.createWriteStream('LICENSE.ht.s19'));
+// fs.createReadStream('LICENSE')
+//   .pipe(new hextape.signetics.HexStream())
+//   .pipe(fs.createWriteStream('LICENSE.ht.shx'));

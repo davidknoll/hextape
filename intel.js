@@ -5,6 +5,7 @@
  */
 'use strict';
 const printf = require('printf');
+const { Transform } = require('stream');
 
 /**
  * Generate one Intel hex record
@@ -55,4 +56,103 @@ const parseRecord = (record) => {
   return { type, addr, buf };
 };
 
-module.exports = { buildRecord, parseRecord };
+function * concatgen(bufs) {
+  for (let i = 0; i < bufs.length; i++) {
+    for (const value of bufs[i]) { yield value; }
+  }
+}
+
+class HexStream extends Transform {
+  // Private instance variables
+  _tmpbuf;
+  _ptr;
+  _exec;
+  _reclen;
+  _needea;
+
+  /**
+   * Construct a new transform stream turning binary data into Intel hex records.
+   * Record types and checksums are determined automatically.
+   * @param {?null}    header Not used in Intel hex
+   * @param {?number} base   Load address, 0x0 - 0xFFFFFFFF
+   * @param {?number} exec   Execution address, 0x0 - 0xFFFFFFFF
+   * @param {?number} reclen Maximum data bytes in one record, 1 - 255
+   * @throws If addresses bad
+   */
+  constructor(header = null, base = 0, exec = 0, reclen = 0x20) {
+    if (!Number.isInteger(base) || base < 0 || base > 0xFFFFFFFF) {
+      throw new Error('Bad base address');
+    }
+    if (!Number.isInteger(exec) || exec < 0 || exec > 0xFFFFFFFF) {
+      throw new Error('Bad exec address');
+    }
+    if (!Number.isInteger(reclen) || reclen < 1 || reclen > 0xFF) {
+      reclen = 0x20;
+    }
+
+    super();
+    this._tmpbuf = Buffer.alloc(0);
+    this._ptr = base;
+    this._exec = exec;
+    this._reclen = reclen;
+    this._needea = true;
+  }
+
+  // Transform stream implementation, receive a binary chunk
+  _transform(chunk, encoding, callback) {
+    const bg = concatgen([this._tmpbuf, chunk]);
+    let recbytes = [];
+    while (true) {
+      // Get next byte, or save any incomplete record
+      const b = bg.next();
+      if (b.done) {
+        this._tmpbuf = Buffer.from(recbytes);
+        return callback();
+      }
+      recbytes.push(b.value);
+
+      // Got enough bytes for a record
+      if (recbytes.length === this._reclen) {
+        // If last record crossed or ended on a 64KB boundary, output extended address
+        if (this._needea) {
+          const eabuf = Buffer.allocUnsafe(2);
+          eabuf.writeInt16BE(this._ptr >> 16);
+          this.push(buildRecord(4, 0, eabuf) + '\n');
+          this._needea = false;
+        }
+        this.push(buildRecord(0, this._ptr & 0xFFFF, Buffer.from(recbytes)) + '\n');
+
+        // Did that record cross or end on a 64KB boundary?
+        if (this._ptr >> 16 !== (this._ptr + this._reclen) >> 16) {
+          this._needea = true;
+        }
+        this._ptr += this._reclen;
+        recbytes = [];
+      }
+    }
+  }
+
+  // Transform stream implementation, flush remaining data and send EOF records
+  _flush(callback) {
+    // If remaining data, emit one more short record
+    if (this._tmpbuf.length) {
+      if (this._needea) {
+        const eabuf = Buffer.allocUnsafe(2);
+        eabuf.writeInt16BE(this._ptr >> 16);
+        this.push(buildRecord(4, 0, eabuf) + '\n');
+      }
+      this.push(buildRecord(0, this._ptr & 0xFFFF, this._tmpbuf) + '\n');
+    }
+
+    // Exec address if any, EOF
+    if (this._exec) {
+      const eabuf = Buffer.allocUnsafe(4);
+      eabuf.writeInt32BE(this._exec);
+      this.push(buildRecord(5, 0, eabuf) + '\n');
+    }
+    this.push(buildRecord(1) + '\n');
+    callback();
+  }
+}
+
+module.exports = { buildRecord, parseRecord, HexStream };

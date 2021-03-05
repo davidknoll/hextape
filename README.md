@@ -7,6 +7,7 @@ Converts to/from various ASCII hex record formats used in EPROM programming, pap
   * `intel` - Intel hex format
     * `buildRecord(type, addr, buf)`
     * `parseRecord(record)`
+    * `new HexStream(header, base, exec, reclen)`
   * `motorola` - Motorola S-records
     * `buildRecord(type, addr, buf)`
     * `parseRecord(record)`
